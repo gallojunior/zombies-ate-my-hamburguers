@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <title>Zombies Ate My Hamburguer</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="processing.js"></script>
+    <script type="text/processing" data-processing-target="gameBoard">
+
+        int posEmpty      = 0;
+        int posWall       = 1;
+        int posCharacter  = 2;
+        int posConsumable = 3;
+        int posEnemie     = 4;
+        int posBreakable  = 5;
+
+        PFont fontZombie = loadFont("Zombie");
+        PFont fontArial = loadFont("Arial");
+
+
+        // ------------------------------------------------------------------------------------ Classe Base
+        class Base {
+            int posX;
+            int posY;
+            int pixelSize;
+        };
+
+
+        // ------------------------------------------------------------------------------------ Classe de Controle de Apresentação de Textos
+        class TextControl {
+            var Align;
+            int[] Color = new int[3];
+
+            TextControl(Style, Size, Align, Color) {
+                SetText(Style, Size, Align, Color);
+            }
+
+            voi SetText(Style, Size, Align, Color) {
+                this.Size = Size;
+                this.Align = Align;
+                this.Color = Color;
+
+                textFont(Style, this.Size);
+
+                textAlign(this.Align);
+                fill(Color[0], Color[1], Color[2]);
+            }
+
+            void SetAlign(Align) {
+                this.Align = Align;
+            }
+
+            void Show(texto, posX, posY) {
+                text(texto, posX, posY);
+            }
+        };
+
+
+        // ------------------------------------------------------------------------------------ GameBoard Class        
+        class GameBoard {
+            int width;
+            int height;
+            int cols;
+            int rows;
+            int pixelSize;
+            int[][] boardMatrix;
+            
+            PImage fundo = loadImage("imagens/assets/intro.jpg");
+            PImage saida = loadImage("imagens/assets/wall/exit.png");
+            PImage[] wallSprites;
+            PImage[] floorSprites;
+
+            GameBoard(pixelSize){
+               
+                this.pixelSize = pixelSize;
+
+                // Variaveis para determinar o tamanho da página, número de linhas e colunas de acordo com o tamanho do pixel art utilizado
+                this.width = window.innerWidth;
+                this.cols = floor( this.width / pixelSize );
+                this.height = window.innerHeight;
+                this.rows = floor(this.height / pixelSize);
+
+                // Matrix para controle de conteudo de posições do jogo
+                boardMatrix = new int[rows][cols];
+                int mur = 0;
+                for ( int i = 0; i < rows; i++ ) {
+                    for (int j = 0; j < cols; j++ ) {
+                        if ( i == 0 || j == 0 || i == rows-1 || j == cols-1 ) {
+                            mur += 1;
+                            boardMatrix[i][j] = posWall;
+                        } else {
+                            boardMatrix[i][j] = posEmpty;
+                        }
+                    }
+                }
+
+                // Criação de um vetor para definição das imagens que irão compor o muro
+                this.wallSprites = new PImage[mur];
+                for ( int i = 0; i < mur; i++ ) {
+                    String image = "imagens/assets/wall/wall" + str(int(random(1,4))) + ".png";
+                    this.wallSprites[i] = loadImage(image);
+                }
+
+                // Criação de um vetor para definição das imagens que irão compor o chão
+                int tam = (cols-1) * (rows-1);
+                this.floorSprites = new PImage[tam];
+                for ( int i = 0; i < tam; i++ ) {
+                    String image = "imagens/assets/floor/" + str(int(random(1,9))) + ".png";
+                    this.floorSprites[i] = loadImage(image);
+                }
+
+                size(window.innerWidth, window.innerHeight);
+
+            };
+
+            void BackGround(value) {
+                if (value == 0) {
+                    image(fundo, 0, 0);
+                } else {
+                    background(value);
+                    int z = 0;
+                    int y = 0;
+                    for ( int i = 0; i < rows; i++ ) {
+                        for ( int j = 0; j < cols; j++ ) {
+                            if ( i == 0 || j == 0 || i == rows-1 || j == cols-1 ) {
+                                image(wallSprites[z], j * pixelSize, i * pixelSize);
+                                z += 1;
+                            } else {
+                                image(floorSprites[y], j * pixelSize, i * pixelSize);
+                                y += 1;
+                            };
+                        }
+                    }
+                    image(saida, (cols-1) * pixelSize, 2 * pixelSize);
+                }
+            };
+           
+        };
+        
+
+        // ------------------------------------------------------------------------------------ Character Class
+        class Character extends Base {
+            int numFramesIdle;
+            int currentFrame;
+            PImage[] idleSprites;
+            
+            int numFramesAttack;
+            PImage[] attackSprites;
+
+            int numFramesHurt;
+            PImage[] hurtSprites;
+
+            Character(x, y, framesIdle, framesAttack, framesHurt, pixelSize){
+                this.posX = x;
+                this.posY = y;
+                this.pixelSize = pixelSize;
+                this.numFramesIdle = framesIdle;
+                this.numFramesAttack = framesAttack;
+                this.numFramesHurt = framesHurt;
+                
+                this.currentFrame = 1;
+                this.idleSprites = new PImage[framesIdle];
+                for (int i = 0; i < framesIdle; i++){
+                    String image = "imagens/char/idle/" + str(i + 1) + ".png";
+                    this.idleSprites[i] = loadImage(image);
+                }
+
+                this.attackSprites = new PImage[framesAttack];
+                for (int i = 0; i < framesAttack; i++){
+                    String image = "imagens/char/attack/" + str(i + 1) + ".png";
+                    this.attackSprites[i] = loadImage(image);
+                }
+                
+                this.hurtSprites = new PImage[framesHurt];
+                for (int i = 0; i < framesHurt; i++){
+                    String image = "imagens/char/hurt/" + str(i + 1) + ".png";
+                    this.hurtSprites[i] = loadImage(image);
+                }
+            };
+
+            void Move(int x, int y){
+                this.posX = x;
+                this.posY = y;
+            };
+
+            void Idle(){
+                frameRate(numFramesIdle);
+                this.currentFrame = (this.currentFrame + 1) % this.numFramesIdle;
+                image(idleSprites[this.currentFrame], this.posX * pixelSize, this.posY * pixelSize);
+            }
+
+            void Attack(){
+                //frameRate(numFramesAttack);
+                for (int i = 0; i < numFramesAttack; i++){
+                    image(attackSprites[i], this.posX * pixelSize, this.posY * pixelSize);
+                }
+            }
+
+            void Hurt(){
+                //frameRate(numFramesHurt);
+                for (int i = 0; i < numFramesHurt; i++){
+                    image(hurtSprites[i], this.posX * pixelSize, this.posY * pixelSize);
+                }
+            }
+        }
+
+
+        // ------------------------------------------------------------------------------------ Enemie Class
+        class Enemie extends Base {
+            int numFramesIdle;
+            int currentFrame;
+            PImage[] idleSprites;
+            
+            int numFramesAttack;
+            PImage[] attackSprites;
+
+            Enemie(x, y, framesIdle, framesAttack, enemie, pixelSize){
+                this.posX = x;
+                this.posY = y;
+                this.pixelSize = pixelSize;
+                this.numFramesIdle = framesIdle;
+                this.numFramesAttack = framesAttack;
+                
+                this.currentFrame = 1;
+                this.idleSprites = new PImage[framesIdle];
+                for (int i = 0; i < framesIdle; i++){
+                    String image = "imagens/enemies/zombie" + str(enemie) + "/idle/" + str(i + 1) + ".png";
+                    this.idleSprites[i] = loadImage(image);
+                };
+
+                this.attackSprites = new PImage[framesAttack];
+                for ( int i = 0; i < framesAttack; i++ ) {
+                    String image = "imagens/enemies/zombie" + str(enemie) + "/attack/" + str(i + 1) + ".png";
+                    this.attackSprites[i] = loadImage(image);
+                };
+            };
+
+            void Move(x, y){
+                this.posX = x;
+                this.posY = y;
+                image(idleSprites[this.currentFrame], this.posX * pixelSize, this.posY * pixelSize);
+            };
+
+            void Idle(){
+                frameRate(numFramesIdle);
+                this.currentFrame = (this.currentFrame + 1) % this.numFramesIdle;
+                image(idleSprites[this.currentFrame], this.posX * pixelSize, this.posY * pixelSize);
+            }
+
+            void Attack(){
+                //frameRate(numFramesAttack);
+                for (int i = 0; i < numFramesAttack; i++){
+                    image(attackSprites[i], this.posX * pixelSize, this.posY * pixelSize);
+                }
+            }
+        }
+
+
+        // ------------------------------------------------------------------------------------- Consumable Class
+        class Consumable extends Base {
+            int status;
+            int points;
+            PImage imagem;
+
+            Consumable(x, y, pixelSize, points, imagem){
+                this.posX = x;
+                this.posY = y;
+                this.points = points;
+                this.pixelSize = pixelSize;
+                this.status = 1;
+                this.imagem = loadImage(imagem);
+            }
+
+            void Draw() {
+                if (this.status == 1) {
+                    image(imagem, posX * pixelSize, posY * pixelSize);
+                }
+            }
+
+            int Eat(){
+                this.status = 0;
+                return this.points;
+            }
+        }
+
+
+        // ------------------------------------------------------------------------------------- Consumable Class
+        class Breakable extends Base {
+            int status;
+            int numFrames;
+            String imageFolder;
+            PImage[] imagem;
+
+            Breakable(x, y, pixelSize, numFrames, imageFolder){
+                this.posX = x;
+                this.posY = y;
+                this.numFrames = numFrames;
+                this.status = 1;
+                this.pixelSize = pixelSize;
+                this.imageFolder = imageFolder;
+                this.imagem = new PImage[numFrames];
+                for (int i = 0; i < numFrames; i++) {
+                    String image = "imagens/assets/breakable/" + str(imageFolder) + "/" + str(i + 1) + ".png";
+                    this.imagem[i] = loadImage(image);
+                }
+            }
+
+            void Draw() {
+                if (this.status <= this.numFrames) {
+                    image(imagem[status-1], posX * pixelSize, posY * pixelSize);
+                }
+            }
+
+            boolean Break(){
+                this.status += 1;
+                return status > numFrames;
+            }
+
+        }
+
+
+        // ------------------------------------------------------------------------------------ Level Class
+        class Level {
+            int numero;
+            int numItens;
+            int numEnemies;
+            int numBreakables;
+            int tempoDecorrido;
+
+            GameBoard board;
+            Consumable[] itens;
+            Character character;
+            Enemie[] enemies;
+            Breakable[] breakables;
+
+            Level(numero, itens, enemies, board) {
+                this.numero = numero;
+                this.numItens = itens;
+                this.numEnemies = enemies;
+                this.board = board;
+                this.numBreakables = board.cols * 2;
+
+                // Inicializa o personagem no Board
+                this.character = new Character(2, this.board.rows-3, 6, 2, 2, this.board.pixelSize);
+                this.board.boardMatrix[this.board.rows-3][2] = posCharacter;
+
+
+                // Inicializa os itens consumiveis testando as posições antes de inserir no level
+                this.itens = new Consumable[numItens];
+                int i = 0;
+                while (i < this.numItens) {
+                    int x = int(random(3, board.cols-2));
+                    int y = int(random(2, board.rows-2));
+                    if (board.boardMatrix[y][x] == posEmpty){
+                        board.boardMatrix[y][x] = posConsumable;
+                        if (int(random(2)) == 0) {
+                            this.itens[i] = new Consumable(x, y, board.pixelSize, 20, "imagens/assets/itens/hamburguer.png");
+                        } else {
+                            this.itens[i] = new Consumable(x, y, board.pixelSize, 10, "imagens/assets/itens/coke.png");
+                        }
+                        i += 1;
+                    };
+                };
+
+
+                // Inicializa os obstaculos quebraveis testando as posições antes de inserir no level
+                this.breakables = new Breakable[numBreakables];
+                int i = 0;
+                while (i < this.numBreakables) {
+                    int x = int(random(2, board.cols-2));
+                    int y = int(random(2, board.rows-2));
+                    if (board.boardMatrix[y][x] == posEmpty){
+                        board.boardMatrix[y][x] = posBreakable;
+                        int folder = int(random(1,6));
+                        if (folder == 3 || folder == 4 || folder == 5) {
+                            this.breakables[i] = new Breakable(x, y, board.pixelSize, 3, folder);
+                        }
+                        else {
+                            this.breakables[i] = new Breakable(x, y, board.pixelSize, 2, folder);
+                        }
+                        i += 1;
+                    };
+                };
+
+                // Inicializa os inimigos testando as posições antes de inserir no level
+                this.enemies = new Enemie[numEnemies];
+                int i = 0;
+                while (i < this.numEnemies) {
+                    int x = int(random(4, board.cols-2));
+                    int y = int(random(2, board.rows-2));
+                    if (board.boardMatrix[y][x] == posEmpty){
+                        board.boardMatrix[y][x] = posEnemie;
+                        this.enemies[i] = new Enemie(x, y, 6, 2, int(random(0,2)), board.pixelSize);
+                        i += 1;
+                    };
+                };
+
+            };
+
+            Consumable GetConsumable(x, y) {
+                for ( int i = 0; i < this.numItens; i++ ) {
+                    if (itens[i].posX == x && itens[i].posY == y) {
+                        return itens[i];
+                    }
+                };
+            };
+
+            Enemie GetEnemie(x, y) {
+                for ( int i = 0; i < this.numEnemies; i++ ) {
+                    if (enemies[i].posX == x && enemies[i].posY == y) {
+                        return enemies[i];
+                    }
+                };
+            };
+
+            Breakable GetBreakable(x, y) {
+                for ( int i = 0; i < this.numBreakables; i++ ) {
+                    if (breakables[i].posX == x && breakables[i].posY == y) {
+                        return breakables[i];
+                    }
+                };
+            };
+
+        }
+
+
+
+        // ------------------------------------------------------------------------------------ Game Class
+        class Game {
+            GameBoard board;
+            TextControl message;
+            Level level;
+            int Score = 200;
+
+            boolean help = false;
+            boolean intro = true;
+            boolean paused = false;
+            boolean endGame = false;
+            boolean levelDone = false;
+
+            Game() {
+                board = new GameBoard(64);
+                level = new Level(1, 5, 5, board);
+            };
+
+            void Restart() {
+                help = false;
+                intro = false;
+                paused = false;
+                endGame = false;
+                levelDone = false;
+                Score = 200;
+                board = new GameBoard(64);
+                level = new Level(1, 3, 4, board);
+            }
+
+            void Intro() {
+                board.BackGround(0);
+                message = new TextControl(fontZombie, 150, CENTER, [139,0,0]); 
+                message.Show("ZUMBIS", width/2, 150);
+                message.Show("COMERAM MEU", width/2, 325);
+                message.Show("HAMBURGUER", width/2, 500);
+
+                message.SetText(fontArial, 40, CENTER, [255, 255, 255]);
+                message.Show("Clique para começar!", width/2, 650);
+                message.Show("Desenvolvido por José Antonio Gallo Junior", width/2, 700);
+            };
+
+            void ShowHelp() {
+                board.BackGround(0);
+                message = new TextControl(fontZombie, 150, CENTER, [139,0,0]); 
+                message.Show("ajuda", width/2, 200);
+
+                message.SetText(fontArial, 40, CENTER, [255, 255, 255]);
+                message.Show("Atravesse o cenário e chegue a Saída", width/2, height/2);
+                message.Show("Use as setas para movimentar o personagem", width/2, height/2 + 50);
+                message.Show("Colete os lanches pelo caminho", width/2, height/2 + 100);
+                message.Show("Se a comida acabar você morre", width/2, height/2 + 150);
+                message.Show("Os obstaculos são quebraveis", width/2, height/2 + 200);
+                message.Show("Desenvolvido por José Antonio Gallo Junior", width/2, height/2 + 250);
+
+            }
+
+            void NextLevel() {
+                levelDone = true;
+                board.BackGround(0);
+                message = new TextControl(fontZombie, 150, CENTER, [139,0,0]); 
+                message.Show("fase concluida", width/2, height/2);
+
+                message.SetText(fontArial, 40, CENTER, [255, 255, 255]);
+                message.Show("Pressione R para Reiniciar!", width/2, 650);
+            };
+
+            void GameOver() {
+                board.BackGround(0);
+                message = new TextControl(fontZombie, 200, CENTER, [139,0,0]); 
+                message.Show("Voce Morreu", width/2, height/2-100);
+                message.Show("De Fome", width/2, height/2+150);
+            };
+
+            void Paused() {
+                board.BackGround(0);
+                message = new TextControl(fontZombie, 150, CENTER, [139,0,0]); 
+                message.Show("Jogo Pausado", width/2, height/2);
+                
+                message.SetText(fontArial, 40, CENTER, [255, 255, 255]);
+                message.Show("Clique para continuar!", width/2, 650);
+            };
+
+            void ShowLevel() {
+                for ( int i = 0; i < level.numItens; i++ ) {
+                    level.itens[i].Draw();
+                };
+                for ( int i = 0; i < level.numBreakables; i++ ) {
+                    level.breakables[i].Draw();
+                };
+                for ( int i = 0; i < level.numEnemies; i++ ) {
+                    level.enemies[i].Idle();
+                };
+                level.character.Idle();
+                message = new TextControl(fontArial, 28, LEFT, [255,255,255]); 
+                message.Show("Comida Restante: " + str(Score), 20, 40);
+                message.Show("F1 - Ajuda        ←↑↓→ - Movimentar       A - Atacar      Mouse - Pausa   ", 20, height - 20);
+            }
+
+            void MoveCharacter(side) {
+                int x = level.character.posX;
+                int y = level.character.posY;
+                int newX = x;
+                int newY = y;
+
+                if (side == LEFT)  { newX -= 1; }
+                if (side == UP)    { newY -= 1; }
+                if (side == RIGHT) { newX += 1; }
+                if (side == DOWN)  { newY += 1; }
+
+                if (newX == board.cols-1 && newY == 2 ) {
+                    level.character.Move(newX, newY);
+                    NextLevel();
+                } else {
+                    if (board.boardMatrix[newY][newX] == posEmpty ){
+                        board.boardMatrix[y][x] = posEmpty;
+                        level.character.Move(newX, newY);
+                        board.boardMatrix[newY][newX] = posCharacter;
+                        MoveEnemie();
+                        Score -= 1;
+                    }
+                    else {
+                        if (board.boardMatrix[newY][newX] == posConsumable){
+                            board.boardMatrix[y][x] = posEmpty;
+                            
+                            Score += level.GetConsumable(newX, newY).Eat();
+                            
+                            level.character.Move(newX, newY);
+                            board.boardMatrix[newY][newX] = posCharacter;
+                            MoveEnemie();
+                        };
+                    };
+                };
+            };
+
+            void MoveEnemie(){
+                for ( int i = 0; i < level.numEnemies; i++) {
+                    int x = level.enemies[i].posX;
+                    int y = level.enemies[i].posY;
+                    int newX = x + (int(random(-2,2)));
+                    int newY = y + (int(random(-2,2)));
+                    if (board.boardMatrix[newY][newX] == posEmpty ){
+                        board.boardMatrix[y][x] = posEmpty;
+                        level.enemies[i].Move(newX, newY);
+                        board.boardMatrix[newY][newX] = posEnemie;
+                    }
+                }
+            };
+
+            void CharAttack(){
+                int x = level.character.posX;
+                int y = level.character.posY;
+                int newX = x+1;
+                int newY = y;
+                
+                if (board.boardMatrix[newY][newX] == posEnemie){
+                    Enemie enemie = level.GetEnemie(newX, newY);
+                    enemie.Attack();
+                }
+                if (board.boardMatrix[newY][newX] == posBreakable){
+                    Breakable breakable = level.GetBreakable(newX, newY);
+                    if (breakable.Break()){
+                        board.boardMatrix[newY][newX] = posEmpty;
+                    }
+                }
+                level.character.Attack();
+                Score -= 2;
+            };
+
+            void CheckScore(){
+                if ( Score <= 0 ) {
+                    endGame = true;
+                }
+            }
+
+        };
+
+
+        // ------------------------------------------------------------------------------------ Main Code
+        Game game;
+
+        void setup() {
+            game = new Game();
+        }
+
+        void draw() {
+            if (game.intro) { 
+                game.Intro();
+            } else { 
+                if (!game.paused && !game.endGame && !game.help && !game.levelDone) {
+                    game.board.BackGround(128);
+                    game.ShowLevel();
+                    game.CheckScore();
+                } else {
+                    if (game.endGame) {
+                        game.GameOver();
+                    } else {
+                        if (game.levelDone) {
+                            game.NextLevel();
+                        } else {
+                            if (game.help) {
+                                game.ShowHelp();
+                            } else {
+                                if (game.paused) {
+                                    game.Paused();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        void keyPressed(){
+            
+            if (!game.intro && !game.paused && !game.endGame && !game.help && !game.levelDone) {
+                if (keyCode == UP || keyCode == DOWN || keyCode == LEFT || keyCode == RIGHT) {
+                    game.MoveCharacter(keyCode);
+                    game.board.BackGround(128);
+                    game.ShowLevel();
+                };
+
+                if (keyCode == 65) {
+                    game.CharAttack();
+                }
+
+            };
+            
+            // Pressionado R
+            if (keyCode == 82) {
+                game.Restart();
+            };
+
+            // Pressionado F1
+            if (keyCode == 112) {
+                game.help = true;
+            }
+        };
+
+        void mousePressed() {
+            if (game.intro) {
+                game.intro = false;
+            }
+            else{
+                if (game.help) {
+                    game.help = false;
+                }
+                else {
+                    if (game.endGame){
+                        game.Restart();
+                        game.intro = true;
+                    } else {
+                        game.paused = !game.paused;
+                    }
+                }
+            }
+        };
+
+
+    </script>
+</head>
+
+<body>
+    <canvas id="gameBoard" class="borda"></canvas>
+</body>
+
+</html>
